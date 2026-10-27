@@ -88,11 +88,10 @@ def jalankan_robot(mode):
             if mode in ["siang", "malam"]:
                 link_patroli = links["siang"] if mode == "siang" else links["malam"]
                 
-                baris_patroli = page.locator("div, li").filter(has_text="Patroli Sabhara").filter(has_text="QW1.10")
-                baris_patroli.get_by_role("button", name="Isi laporan").first.click()
+                # Klik tombol Patroli Sabhara QW1.10
+                page.get_by_text("QW1.10").first.click()
                 page.wait_for_timeout(2000)
 
-                # Mengisi tepat di sasaran menggunakan label dan placeholder asli
                 page.get_by_label("Nama dan pangkat pejabat pelaksana").fill("BRIPKA ABU ZAKARIYA,S.H.")
                 page.get_by_label("Rute patroli").fill("MAKO - BRI - PASAR - BPD - BNI - MANDIRI - MAKO")
                 page.get_by_placeholder("Alasan rute dipilih").fill("Antisipasi Gangguan keamanan")
@@ -106,39 +105,39 @@ def jalankan_robot(mode):
                 page.screenshot(path=ss_patroli)
                 kirim_notif_telegram(f"✅ Laporan PATROLI {mode.upper()} berhasil dikirim!\n🔗 Link: {link_patroli}", ss_patroli)
 
-            # 4. EKSEKUSI DIMTAQ EKSTERNAL
+            # 4. EKSEKUSI DIMTAQ EKSTERNAL (QW1.14)
             if mode in ["siang", "dimtaq"]:
                 link_dimtaq = links["dimtaq"]
-                page.goto("https://poskopbm.polri.go.id/input", timeout=60000, wait_until="domcontentloaded")
-                page.wait_for_timeout(3000)
-                page.get_by_label("Nama dan pangkat pelapor").fill("BRIPKA ABU ZAKARIYA, SH")
-                page.locator("select").first.select_option(label="Kanit Samapta (3 kegiatan)")
-                page.wait_for_timeout(2000)
-
-                baris_dimtaq = page.locator("div, li").filter(has_text="DIMTAQ").filter(has_text="QW1.14")
-                baris_dimtaq.get_by_role("button", name="Isi laporan").first.click()
-                page.wait_for_timeout(2000)
-
-                page.get_by_label("Nama dan pangkat pejabat pelaksana").fill("BRIPKA ABU ZAKARIYA, S.H.")
-                page.get_by_label("Nama lokasi DIMTAQ dan titik koordinat").first.fill("PASAR JATISRONO")
                 
-                # Isi titik koordinat
-                koord_input = page.locator("input[placeholder*='7.'], input[placeholder*='koordinat' i], input[value*='-7.']")
-                if koord_input.count() > 0:
-                    koord_input.first.fill("(-7.8273937, 111.1285440)")
+                # Klik langsung tombol menu QW1.14 DIMTAQ (atau tombol Isi laporan kedua)
+                tombol_qw14 = page.locator("button, div").filter(has_text="QW1.14").filter(has_text="DIMTAQ")
+                if page.get_by_role("button", name="Isi laporan").count() >= 2:
+                    page.get_by_role("button", name="Isi laporan").nth(1).click()
                 else:
-                    # Jika kotak koordinat berada tepat di bawah tombol Google Maps
-                    page.locator("xpath=//a[contains(., 'Google Maps')]/following::input[1]").fill("(-7.8273937, 111.1285440)")
+                    tombol_qw14.last.click()
+                page.wait_for_timeout(2500)
 
-                page.get_by_label("Pertimbangan pilihan lokasi").fill("Antisipasi gangguan keamanan")
+                # b. Nama dan pangkat pejabat pelaksana
+                page.get_by_label("Nama dan pangkat pejabat pelaksana").fill("BRIPKA ABU ZAKARIYA, S.H.")
+                
+                # c. Nama lokasi DIMTAQ dan titik koordinat (2 kotak input di bawah bagian c)
+                input_lokasi = page.locator("xpath=//*[contains(text(), 'Nama lokasi DIMTAQ')]/following::input")
+                input_lokasi.nth(0).fill("PASAR JATISRONO")
+                input_lokasi.nth(1).fill("(-7.8273937, 111.1285440)")
 
-                # Isi angka 1 pada kolom jumlah
+                # d. Pertimbangan pilihan lokasi
+                page.locator("xpath=//*[contains(text(), 'Pertimbangan pilihan lokasi')]/following::textarea[1]").fill("Antisipasi gangguan keamanan")
+
+                # e & f. Isi angka 1 pada kolom jumlah
                 num_inputs = page.locator("input[type='number']")
                 if num_inputs.count() >= 2:
                     num_inputs.nth(0).fill("1")
                     num_inputs.nth(1).fill("1")
 
-                page.get_by_label("Uraian pelaksanaan kegiatan").fill("Melaksanakan patroli rutin")
+                # h. Uraian pelaksanaan kegiatan
+                page.locator("xpath=//*[contains(text(), 'Uraian pelaksanaan kegiatan')]/following::textarea[1]").fill("Melaksanakan patroli rutin")
+                
+                # k. Link Google Drive
                 page.locator("input[placeholder*='drive.google.com']").fill(link_dimtaq)
 
                 page.wait_for_timeout(1000)
