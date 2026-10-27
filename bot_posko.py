@@ -11,19 +11,16 @@ TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 DEFAULT_LINK = "https://drive.google.com/file/d/17KmVFmPU-OZk0dBdbVgF7AZ6ayhGWPyl/view?usp=drivesdk"
 
 def kirim_notif_telegram(pesan, foto_path=None):
-    print(f"Mengirim pesan ke Telegram (Chat ID: {TG_CHAT_ID})...")
     if not TG_TOKEN or not TG_CHAT_ID:
-        print("❌ ERROR: TELEGRAM_TOKEN atau TELEGRAM_CHAT_ID kosong di GitHub Secrets!")
         return
     try:
         if foto_path and os.path.exists(foto_path):
             url = f"https://api.telegram.org/bot{TG_TOKEN}/sendPhoto"
             with open(foto_path, "rb") as f:
-                r = requests.post(url, data={"chat_id": TG_CHAT_ID, "caption": pesan[:1000]}, files={"photo": f}, timeout=20)
+                requests.post(url, data={"chat_id": TG_CHAT_ID, "caption": pesan[:1000]}, files={"photo": f}, timeout=20)
         else:
             url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-            r = requests.post(url, data={"chat_id": TG_CHAT_ID, "text": pesan[:4000]}, timeout=20)
-        print("Status Respon Telegram:", r.status_code, r.text)
+            requests.post(url, data={"chat_id": TG_CHAT_ID, "text": pesan[:4000]}, timeout=20)
     except Exception as e:
         print("Gagal kirim ke Telegram:", e)
 
@@ -34,7 +31,6 @@ def ambil_link_dari_telegram():
     try:
         url = f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates"
         res = requests.get(url, timeout=15).json()
-        print("Cek pesan masuk Telegram:", res.get("ok"))
         for item in res.get("result", []):
             msg = item.get("message", {})
             text = msg.get("text", "").strip()
@@ -54,11 +50,9 @@ def ambil_link_dari_telegram():
                     links["siang"] = links["dimtaq"] = links["malam"] = link
     except Exception as e:
         print("Gagal baca Telegram:", e)
-    print("Link yang akan dipakai:", links)
     return links
 
 def jalankan_robot(mode):
-    print(f"=== MEMULAI ROBOT MODE: {mode.upper()} ===")
     kirim_notif_telegram(f"🤖 Robot Posko PBM mulai berjalan (Mode: {mode.upper()})...")
     links = ambil_link_dari_telegram()
     
@@ -75,41 +69,33 @@ def jalankan_robot(mode):
         page = context.new_page()
 
         try:
-            print("Membuka Posko PBM...")
             page.goto("https://poskopbm.polri.go.id/input", timeout=60000, wait_until="domcontentloaded")
             page.wait_for_timeout(3000)
-            print("Judul Halaman:", page.title())
 
             # 1. Login jika diminta
             if page.locator("input[type='password']").count() > 0:
-                print("Halaman Login terdeteksi, memasukkan email & password...")
                 page.locator("input[type='email'], input[type='text']").first.fill(EMAIL)
                 page.locator("input[type='password']").first.fill(PASSWORD)
                 page.get_by_role("button", name="Masuk").click()
                 page.wait_for_timeout(5000)
-                print("Login diklik!")
 
             # 2. Isi Identitas & Pilih Jabatan Kanit Samapta
-            print("Mengisi nama pelapor & memilih jabatan...")
-            pelapor = page.locator("xpath=//label[contains(., 'Nama dan pangkat pelapor')]/following::input[1]")
-            if pelapor.count() > 0:
-                pelapor.fill("BRIPKA ABU ZAKARIYA, SH")
-
+            page.get_by_label("Nama dan pangkat pelapor").fill("BRIPKA ABU ZAKARIYA, SH")
             page.locator("select").first.select_option(label="Kanit Samapta (3 kegiatan)")
             page.wait_for_timeout(2000)
 
             # 3. EKSEKUSI PATROLI SABHARA (SIANG / MALAM)
             if mode in ["siang", "malam"]:
-                print(f"Mengisi form Patroli {mode}...")
                 link_patroli = links["siang"] if mode == "siang" else links["malam"]
                 
                 baris_patroli = page.locator("div, li").filter(has_text="Patroli Sabhara").filter(has_text="QW1.10")
                 baris_patroli.get_by_role("button", name="Isi laporan").first.click()
                 page.wait_for_timeout(2000)
 
-                page.locator("xpath=//label[contains(., 'Nama dan pangkat pejabat pelaksana')]/following::input[1]").fill("BRIPKA ABU ZAKARIYA,S.H.")
-                page.locator("xpath=//label[contains(., 'Rute patroli')]/following::input[1]").fill("MAKO - BRI - PASAR - BPD - BNI - MANDIRI - MAKO")
-                page.locator("xpath=//label[contains(., 'Pertimbangan pilihan rute')]/following::textarea[1]").fill("Antisipasi Gangguan keamanan")
+                # Mengisi tepat di sasaran menggunakan label dan placeholder asli
+                page.get_by_label("Nama dan pangkat pejabat pelaksana").fill("BRIPKA ABU ZAKARIYA,S.H.")
+                page.get_by_label("Rute patroli").fill("MAKO - BRI - PASAR - BPD - BNI - MANDIRI - MAKO")
+                page.get_by_placeholder("Alasan rute dipilih").fill("Antisipasi Gangguan keamanan")
                 page.locator("input[placeholder*='drive.google.com']").fill(link_patroli)
 
                 page.wait_for_timeout(1000)
@@ -122,10 +108,10 @@ def jalankan_robot(mode):
 
             # 4. EKSEKUSI DIMTAQ EKSTERNAL
             if mode in ["siang", "dimtaq"]:
-                print("Mengisi form DIMTAQ...")
                 link_dimtaq = links["dimtaq"]
                 page.goto("https://poskopbm.polri.go.id/input", timeout=60000, wait_until="domcontentloaded")
                 page.wait_for_timeout(3000)
+                page.get_by_label("Nama dan pangkat pelapor").fill("BRIPKA ABU ZAKARIYA, SH")
                 page.locator("select").first.select_option(label="Kanit Samapta (3 kegiatan)")
                 page.wait_for_timeout(2000)
 
@@ -133,17 +119,26 @@ def jalankan_robot(mode):
                 baris_dimtaq.get_by_role("button", name="Isi laporan").first.click()
                 page.wait_for_timeout(2000)
 
-                page.locator("xpath=//label[contains(., 'Nama dan pangkat pejabat pelaksana')]/following::input[1]").fill("BRIPKA ABU ZAKARIYA, S.H.")
-                page.locator("xpath=//label[contains(., 'Nama lokasi DIMTAQ')]/following::input[1]").fill("PASAR JATISRONO")
-                page.locator("xpath=//label[contains(., 'Nama lokasi DIMTAQ')]/following::input[2]").fill("(-7.8273937, 111.1285440)")
-                page.locator("xpath=//label[contains(., 'Pertimbangan pilihan lokasi')]/following::textarea[1]").fill("Antisipasi gangguan keamanan")
+                page.get_by_label("Nama dan pangkat pejabat pelaksana").fill("BRIPKA ABU ZAKARIYA, S.H.")
+                page.get_by_label("Nama lokasi DIMTAQ dan titik koordinat").first.fill("PASAR JATISRONO")
+                
+                # Isi titik koordinat
+                koord_input = page.locator("input[placeholder*='7.'], input[placeholder*='koordinat' i], input[value*='-7.']")
+                if koord_input.count() > 0:
+                    koord_input.first.fill("(-7.8273937, 111.1285440)")
+                else:
+                    # Jika kotak koordinat berada tepat di bawah tombol Google Maps
+                    page.locator("xpath=//a[contains(., 'Google Maps')]/following::input[1]").fill("(-7.8273937, 111.1285440)")
 
-                jml_inputs = page.locator("xpath=//label[contains(., 'Jumlah')]/following::input[@type='number' or @type='text']")
-                if jml_inputs.count() >= 2:
-                    jml_inputs.nth(0).fill("1")
-                    jml_inputs.nth(1).fill("1")
+                page.get_by_label("Pertimbangan pilihan lokasi").fill("Antisipasi gangguan keamanan")
 
-                page.locator("xpath=//label[contains(., 'Uraian pelaksanaan kegiatan')]/following::textarea[1]").fill("Melaksanakan patroli rutin")
+                # Isi angka 1 pada kolom jumlah
+                num_inputs = page.locator("input[type='number']")
+                if num_inputs.count() >= 2:
+                    num_inputs.nth(0).fill("1")
+                    num_inputs.nth(1).fill("1")
+
+                page.get_by_label("Uraian pelaksanaan kegiatan").fill("Melaksanakan patroli rutin")
                 page.locator("input[placeholder*='drive.google.com']").fill(link_dimtaq)
 
                 page.wait_for_timeout(1000)
@@ -155,13 +150,11 @@ def jalankan_robot(mode):
                 kirim_notif_telegram(f"✅ Laporan DIMTAQ EKSTERNAL berhasil dikirim!\n🔗 Link: {link_dimtaq}", ss_dimtaq)
 
         except Exception as e:
-            print("❌ TERJADI ERROR:", str(e))
             err_ss = "error.png"
             try:
                 page.screenshot(path=err_ss)
                 kirim_notif_telegram(f"⚠️ Gagal mengirim laporan ({mode}):\n{str(e)}", err_ss)
-            except Exception as e2:
-                print("Gagal screenshot error:", e2)
+            except Exception:
                 kirim_notif_telegram(f"⚠️ Gagal membuka web ({mode}):\n{str(e)}")
         finally:
             browser.close()
