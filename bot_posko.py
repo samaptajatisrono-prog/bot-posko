@@ -207,8 +207,9 @@ def jalankan_robot(mode):
                 rute_pilihan = random.choice(DAFTAR_RUTE_SIANG if mode == "siang" else DAFTAR_RUTE_MALAM)
                 alasan_pilihan = random.choice(ALASAN_RUTE_SIANG if mode == "siang" else ALASAN_RUTE_MALAM)
                 
-                page.get_by_text("QW1.10").first.click()
-                page.wait_for_timeout(2000)
+                # Langsung klik tombol "Isi laporan" urutan pertama (Patroli Sabhara)
+                page.get_by_role("button", name="Isi laporan").nth(0).click()
+                page.wait_for_timeout(2500)
 
                 page.get_by_label("Nama dan pangkat pejabat pelaksana").fill("BRIPKA ABU ZAKARIYA,S.H.")
                 page.get_by_label("Rute patroli").fill(rute_pilihan)
@@ -236,11 +237,8 @@ def jalankan_robot(mode):
                 pertimbangan_dimtaq = random.choice(paket["pertimbangan"])
                 uraian_dimtaq = random.choice(paket["uraian"])
                 
-                tombol_qw14 = page.locator("button, div").filter(has_text="QW1.14").filter(has_text="DIMTAQ")
-                if page.get_by_role("button", name="Isi laporan").count() >= 2:
-                    page.get_by_role("button", name="Isi laporan").nth(1).click()
-                else:
-                    tombol_qw14.last.click()
+                # Langsung klik tombol "Isi laporan" urutan kedua (DIMTAQ eksternal)
+                page.get_by_role("button", name="Isi laporan").nth(1).click()
                 page.wait_for_timeout(2500)
 
                 page.get_by_label("Nama dan pangkat pejabat pelaksana").fill("BRIPKA ABU ZAKARIYA, S.H.")
