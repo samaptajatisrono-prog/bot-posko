@@ -1,6 +1,8 @@
 import os
+import re
 import sys
 import random
+from datetime import datetime, timedelta, timezone
 import requests
 from playwright.sync_api import sync_playwright
 
@@ -9,7 +11,14 @@ PASSWORD = os.environ.get("POSKO_PASSWORD", "").strip()
 TG_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
-DEFAULT_LINK = "https://drive.google.com/file/d/17KmVFmPU-OZk0dBdbVgF7AZ6ayhGWPyl/view?usp=drivesdk"
+# ==========================================================
+# LINK FOLDER GOOGLE DRIVE STOK 7 HARI
+# ==========================================================
+FOLDER_URLS = {
+    "siang": "https://drive.google.com/drive/folders/1JZ3oF9j2quXlarQqcQqz9GhpwMbekQVA",
+    "malam": "https://drive.google.com/drive/folders/1PPFrBZ7c8kQThXGi2f-BE4sFAXi5uaRU",
+    "dimtaq": "https://drive.google.com/drive/folders/1L1wdZfq6DOKCukFTlE-qxN_m3Z-Z-KNa",
+}
 
 # ==========================================================
 # 1. VARIASI PATROLI SABHARA (QW1.10) - SIANG & MALAM
@@ -141,37 +150,55 @@ def kirim_notif_telegram(pesan, foto_path=None):
     except Exception as e:
         print("Gagal kirim ke Telegram:", e)
 
-def ambil_link_dari_telegram():
-    links = {"siang": DEFAULT_LINK, "dimtaq": DEFAULT_LINK, "malam": DEFAULT_LINK}
-    if not TG_TOKEN:
-        return links
+def ambil_satu_foto_dari_folder(page, kategori):
+    """Membuka folder Google Drive, mendeteksi semua file foto di dalamnya,
+    dan memilih 1 link foto sesuai urutan hari (Hari 1 s/d 7, lalu kembali ke 1)."""
+    folder_url = FOLDER_URLS[kategori]
+    folder_id = folder_url.rstrip("/").split("/")[-1].split("?")[0]
+    embed_url = f"https://drive.google.com/embeddedfolderview?id={folder_id}#list"
+
+    # Hitung urutan hari berdasarkan Waktu Indonesia Barat (WIB / UTC+7)
+    wib_now = datetime.now(timezone(timedelta(hours=7)))
+    indeks_hari = wib_now.weekday()  # Senin=0 (Foto 1) ... Minggu=6 (Foto 7)
+
+    file_links = []
     try:
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates"
-        res = requests.get(url, timeout=15).json()
-        for item in res.get("result", []):
-            msg = item.get("message", {})
-            text = msg.get("text", "").strip()
-            if "drive.google.com" in text:
-                parts = text.split()
-                perintah = parts[0].lower().replace("/", "")
-                link = next((p for p in parts if "drive.google.com" in p), DEFAULT_LINK)
-                if perintah == "siang":
-                    links["siang"] = link
-                    if links["dimtaq"] == DEFAULT_LINK:
-                        links["dimtaq"] = link
-                elif perintah == "dimtaq":
-                    links["dimtaq"] = link
-                elif perintah == "malam":
-                    links["malam"] = link
-                else:
-                    links["siang"] = links["dimtaq"] = links["malam"] = link
+        # Cara 1: Ambil dari tampilan daftar publik Google Drive
+        res = requests.get(embed_url, timeout=20)
+        ids = re.findall(r"/file/d/([a-zA-Z0-9_-]{25,})/", res.text)
+        if not ids:
+            ids = re.findall(r'id="entry-([a-zA-Z0-9_-]{25,})"', res.text)
+        
+        seen = set()
+        for fid in ids:
+            if fid != folder_id and fid not in seen:
+                seen.add(fid)
+                file_links.append(f"https://drive.google.com/file/d/{fid}/view?usp=drivesdk")
+
+        # Cara 2 (Cadangan): Jika perlu render lewat browser Playwright
+        if not file_links:
+            page.goto(folder_url, timeout=60000, wait_until="domcontentloaded")
+            page.wait_for_timeout(4000)
+            html = page.content()
+            ids2 = re.findall(r'data-id="([a-zA-Z0-9_-]{25,})"', html)
+            for fid in ids2:
+                if fid != folder_id and fid not in seen:
+                    seen.add(fid)
+                    file_links.append(f"https://drive.google.com/file/d/{fid}/view?usp=drivesdk")
     except Exception as e:
-        print("Gagal baca Telegram:", e)
-    return links
+        print(f"Gagal memindai folder {kategori}:", e)
+
+    if file_links:
+        idx_terpilih = indeks_hari % len(file_links)
+        link_terpilih = file_links[idx_terpilih]
+        print(f"[{kategori.upper()}] Ditemukan {len(file_links)} foto. Hari ke-{indeks_hari + 1} -> Pakai Foto #{idx_terpilih + 1}")
+        return link_terpilih, idx_terpilih + 1, len(file_links)
+
+    # Jika folder kosong, gunakan link foldernya
+    return folder_url, 1, 1
 
 def jalankan_robot(mode):
-    kirim_notif_telegram(f"🤖 Robot Posko PBM mulai berjalan (Mode: {mode.upper()})...")
-    links = ambil_link_dari_telegram()
+    kirim_notif_telegram(f"🤖 Robot Posko PBM mulai berjalan otomatis (Mode: {mode.upper()})...")
     
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -186,6 +213,11 @@ def jalankan_robot(mode):
         page = context.new_page()
 
         try:
+            # Pilih dulu 1 link foto dari dalam masing-masing folder sesuai giliran hari
+            link_siang, urut_siang, total_siang = ambil_satu_foto_dari_folder(page, "siang") if mode == "siang" else ("", 0, 0)
+            link_malam, urut_malam, total_malam = ambil_satu_foto_dari_folder(page, "malam") if mode == "malam" else ("", 0, 0)
+            link_dimtaq, urut_dimtaq, total_dimtaq = ambil_satu_foto_dari_folder(page, "dimtaq") if mode in ["siang", "dimtaq"] else ("", 0, 0)
+
             page.goto("https://poskopbm.polri.go.id/input", timeout=60000, wait_until="domcontentloaded")
             page.wait_for_timeout(3000)
 
@@ -203,11 +235,12 @@ def jalankan_robot(mode):
 
             # 3. EKSEKUSI PATROLI SABHARA (SIANG / MALAM)
             if mode in ["siang", "malam"]:
-                link_patroli = links["siang"] if mode == "siang" else links["malam"]
+                link_patroli = link_siang if mode == "siang" else link_malam
+                no_foto = urut_siang if mode == "siang" else urut_malam
+                tot_foto = total_siang if mode == "siang" else total_malam
                 rute_pilihan = random.choice(DAFTAR_RUTE_SIANG if mode == "siang" else DAFTAR_RUTE_MALAM)
                 alasan_pilihan = random.choice(ALASAN_RUTE_SIANG if mode == "siang" else ALASAN_RUTE_MALAM)
                 
-                # Langsung klik tombol "Isi laporan" urutan pertama (Patroli Sabhara)
                 page.get_by_role("button", name="Isi laporan").nth(0).click()
                 page.wait_for_timeout(2500)
 
@@ -224,20 +257,19 @@ def jalankan_robot(mode):
                 page.screenshot(path=ss_patroli)
                 kirim_notif_telegram(
                     f"✅ Laporan PATROLI {mode.upper()} berhasil dikirim!\n\n"
+                    f"📸 Foto ke-{no_foto} dari {tot_foto} di Folder\n"
                     f"🛣️ Rute: {rute_pilihan}\n"
                     f"📋 Pertimbangan: {alasan_pilihan}\n"
-                    f"🔗 Link: {link_patroli}",
+                    f"🔗 Link Foto: {link_patroli}",
                     ss_patroli
                 )
 
             # 4. EKSEKUSI DIMTAQ EKSTERNAL (QW1.14)
             if mode in ["siang", "dimtaq"]:
-                link_dimtaq = links["dimtaq"]
                 paket = random.choice(PAKET_DIMTAQ)
                 pertimbangan_dimtaq = random.choice(paket["pertimbangan"])
                 uraian_dimtaq = random.choice(paket["uraian"])
                 
-                # Langsung klik tombol "Isi laporan" urutan kedua (DIMTAQ eksternal)
                 page.get_by_role("button", name="Isi laporan").nth(1).click()
                 page.wait_for_timeout(2500)
 
@@ -265,10 +297,11 @@ def jalankan_robot(mode):
                 page.screenshot(path=ss_dimtaq)
                 kirim_notif_telegram(
                     f"✅ Laporan DIMTAQ EKSTERNAL berhasil dikirim!\n\n"
+                    f"📸 Foto ke-{urut_dimtaq} dari {total_dimtaq} di Folder\n"
                     f"📍 Lokasi: {paket['lokasi']} {paket['koordinat']}\n"
                     f"📋 Pertimbangan: {pertimbangan_dimtaq}\n"
                     f"📝 Uraian: {uraian_dimtaq}\n"
-                    f"🔗 Link: {link_dimtaq}",
+                    f"🔗 Link Foto: {link_dimtaq}",
                     ss_dimtaq
                 )
 
