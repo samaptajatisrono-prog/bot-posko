@@ -2,10 +2,10 @@ name: Auto Input Posko PBM 24 Jam
 
 on:
   schedule:
-    # Jam 10:00 WIB (03:00 UTC) -> Otomatis Input Patroli Siang + DIMTAQ
-    - cron: '0 3 * * *'
-    # Jam 21:00 WIB (14:00 UTC) -> Otomatis Input Patroli Malam
-    - cron: '0 14 * * *'
+    # Jam 08:15 WIB (01:15 UTC) -> Otomatis Input Patroli Siang + DIMTAQ
+    - cron: '15 1 * * *'
+    # Jam 20:15 WIB (13:15 UTC) -> Otomatis Input Patroli Malam
+    - cron: '15 13 * * *'
   
   # Bisa juga dipencet manual kapan saja dari aplikasi GitHub di HP
   workflow_dispatch:
@@ -41,7 +41,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python bot_posko.py ${{ github.event.inputs.mode }}
-          elif [ "${{ github.event.schedule }}" = "0 14 * * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "15 13 * * *" ]; then
             python bot_posko.py malam
           else
             python bot_posko.py siang
